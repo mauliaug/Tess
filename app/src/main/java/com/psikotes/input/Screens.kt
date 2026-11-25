@@ -134,7 +134,7 @@ fun App(vm: AppViewModel) {
 @Composable
 private fun TopBar(vm: AppViewModel, canGoBack: Boolean) {
     val title = when (vm.screen) {
-        Screen.LINK -> "Input Psikotes"
+        Screen.LINK -> "Input Psikotes v${BuildConfig.VERSION_NAME}"
         Screen.LIST -> vm.scan?.let { "Ruang ${it.ruang.ifBlank { "-" }}" } ?: "Daftar Siswa"
         Screen.FORM -> vm.current?.let { "Input No ${it.no}" } ?: "Input"
     }

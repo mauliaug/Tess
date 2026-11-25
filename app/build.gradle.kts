@@ -8,12 +8,22 @@ android {
     namespace = "com.psikotes.input"
     compileSdk = 34
 
+    signingConfigs {
+        getByName("debug") {
+            // Kunci tetap supaya APK baru bisa dipasang menimpa versi lama
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.psikotes.input"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     buildTypes {
@@ -30,6 +40,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
