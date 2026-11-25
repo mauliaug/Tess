@@ -1,45 +1,17 @@
 # Input Psikotes (Android, Kotlin)
 
-Aplikasi Android untuk mengisi nilai psikotes (IST, DISC, Career Cluster, dan Learning Style) langsung ke Google Sheets.
+Aplikasi Android untuk mengisi nilai psikotes siswa: IST, DISC, Career Cluster, dan Learning Style. Aplikasi ini tidak memerlukan server atau Apps Script.
 
-Alurnya: **Link → Scan → Daftar siswa → Input → Selesai → kembali ke daftar** (untuk mengedit, pilih lagi nama siswanya).
+## Alur
+1. **Scan:** tempel link Google Sheets/Drive, lalu tekan **Scan**. Cara lain: dari aplikasi Sheets/Drive pilih **Bagikan → Input Psikotes**, atau tekan **Pilih file .xlsx dari HP**.
+   Agar bisa di-scan lewat link, file harus dibagikan dengan akses **"Siapa saja yang memiliki link" (Viewer)**.
+2. **Daftar siswa:** tekan nama siswa, isi nilainya, lalu tekan **Selesai**. Isian tersimpan di HP, dan kamu bisa mengeditnya kapan saja.
+3. **Pindahkan ke file asli:**
+   - **Salin nilai**: menyalin kolom E–AE dari baris 6 sampai baris terakhir. Buka file asli, tekan sel **E6**, lalu pilih **Tempel**.
+   - **Buat .xlsx**: membuat file hasil dengan susunan yang sama persis dengan file asli (baris dan kolomnya sama). Buka file itu, salin range `E6:AE…`, lalu tempel di sel **E6** file asli.
 
-```
-Aplikasi Android (Kotlin)  ──HTTPS──►  Apps Script Web App (backend/Code.gs)  ──►  Google Sheets
-```
-
-Aplikasi Android tidak bisa langsung masuk ke akun Google kamu. Karena itu, Apps Script dipakai sebagai "jembatan". Kalau langsung pakai Sheets API, kamu harus membuat Google Cloud project, OAuth, dan SHA-1, yang jauh lebih ribet.
-
-## A. Pasang backend (sekali saja)
-1. Buka https://script.google.com → **Proyek baru**.
-2. Tempel isi `backend/Code.gs`, lalu ganti `GANTI_KODE_RAHASIA` dengan kode rahasia kamu sendiri.
-3. Di panel kiri, klik **Services (+) → Drive API → Add**. Ini dibutuhkan agar link .xlsx bisa dikonversi otomatis.
-4. Klik **Deploy → New deployment → Web app**, lalu isi:
-   - Execute as: **Me**
-   - Who has access: **Anyone**
-5. Beri izin akses, lalu salin **Web app URL** (berakhiran `/exec`).
-
-> Kalau Code.gs diubah, deploy ulang lewat **Deploy → Manage deployments → Edit → New version**. Dengan cara ini URL-nya tidak berubah.
-
-## B. Build aplikasi
-1. Buka folder ini di **Android Studio** (versi Koala atau yang lebih baru), lalu tunggu proses Gradle sync selesai.
-2. Sambungkan HP (aktifkan USB debugging), lalu tekan **Run ▶**.
-   Kalau mau membuat file APK: **Build → Build App Bundle(s)/APK(s) → Build APK(s)**.
-
-## C. Pakai
-1. Saat pertama kali dibuka, isi **URL Web App** dan **kode rahasia**, lalu tekan Simpan & Tes Koneksi.
-2. Masukkan link spreadsheet dengan salah satu cara berikut:
-   - Tempel link, lalu tekan **Scan**, atau
-   - Dari aplikasi Google Sheets/Drive, tekan **Bagikan → Input Psikotes**. Link akan dipindai otomatis.
-3. Pilih nama siswa, isi nilainya, lalu tekan **Selesai**. Data langsung tertulis ke sheet.
-
-### Tentang link .xlsx
-Link yang mengandung `rtpof=true` adalah file **.xlsx**, dan file seperti ini tidak bisa ditulis oleh API. Untuk itu, backend otomatis membuat salinan **"<nama file> [Sheets]"** di folder yang sama, lalu semua input disimpan di salinan tersebut. Kalau link yang sama di-scan lagi, backend memakai salinan yang sudah ada.
-Setelah selesai, kalau butuh file Excel, buka salinan itu lalu pilih **File → Download → .xlsx**.
-
-## Susunan kolom yang dibaca
-- Sheet: `INPUT`. Kalau tidak ada, yang dipakai adalah sheet pertama.
-- Data siswa mulai **baris 6**. B1 = Sekolah, B2 = Ruang, B3 = Tgl Tes.
+## Susunan kolom (template SMAN1BATIPUH_RUANGx)
+- Sheet `INPUT`. Data siswa dimulai dari baris 6. Informasi sekolah ada di B1 (Sekolah), B2 (Ruang), dan B3 (Tgl Tes).
 
 | Kolom | Isi |
 |---|---|
@@ -47,6 +19,7 @@ Setelah selesai, kalau butuh file Excel, buka salinan itu lalu pilih **File → 
 | E–M | IST: SE, WA, AN, GE, RA, ZR, FA, WU, ME |
 | N | DISC (contoh `C-S-D`) |
 | O–AD | Career Cluster 1–16 |
-| AE | Learning Style (Aktivis / Reflektor / Teoris / Pragmatis) |
+| AE | Learning Style |
 
-Kalau template berubah, sesuaikan konstanta di bagian atas `Code.gs`.
+## Build
+Setiap push ke repo ini otomatis menjalankan GitHub Actions (`.github/workflows/build-apk.yml`), yaitu menjalankan tes lalu membuat APK. File APK bisa diunduh di tab **Actions → run terakhir → Artifacts**.

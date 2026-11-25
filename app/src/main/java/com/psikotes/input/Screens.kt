@@ -1,6 +1,10 @@
 package com.psikotes.input
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,15 +53,13 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -73,6 +74,8 @@ private val Green = Color(0xFF1A8A4A)
 private val Orange = Color(0xFFC27C0E)
 private val Gray = Color(0xFF6B7385)
 private val Red = Color(0xFFC62828)
+
+private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
@@ -92,14 +95,19 @@ fun App(vm: AppViewModel) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
-    val canGoBack = vm.screen == Screen.LIST || vm.screen == Screen.FORM ||
-        (vm.screen == Screen.SETUP && vm.apiUrl.isNotBlank())
+    val canGoBack = vm.screen != Screen.LINK
     BackHandler(enabled = canGoBack) { vm.back() }
 
     Scaffold(
         topBar = { TopBar(vm, canGoBack) },
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { if (vm.screen == Screen.FORM) FormBottomBar(vm) },
+        bottomBar = {
+            when (vm.screen) {
+                Screen.FORM -> FormBottomBar(vm)
+                Screen.LIST -> ListBottomBar(vm)
+                else -> {}
+            }
+        },
     ) { pad ->
         Box(
             Modifier
@@ -107,7 +115,6 @@ fun App(vm: AppViewModel) {
                 .fillMaxSize()
         ) {
             when (vm.screen) {
-                Screen.SETUP -> SetupScreen(vm)
                 Screen.LINK -> LinkScreen(vm)
                 Screen.LIST -> ListScreen(vm)
                 Screen.FORM -> FormScreen(vm)
@@ -127,10 +134,9 @@ fun App(vm: AppViewModel) {
 @Composable
 private fun TopBar(vm: AppViewModel, canGoBack: Boolean) {
     val title = when (vm.screen) {
-        Screen.SETUP -> "Pengaturan"
         Screen.LINK -> "Input Psikotes"
         Screen.LIST -> vm.scan?.let { "Ruang ${it.ruang.ifBlank { "-" }}" } ?: "Daftar Siswa"
-        Screen.FORM -> vm.detail?.let { "Input No ${it.no}" } ?: "Memuat…"
+        Screen.FORM -> vm.current?.let { "Input No ${it.no}" } ?: "Input"
     }
     TopAppBar(
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -142,14 +148,10 @@ private fun TopBar(vm: AppViewModel, canGoBack: Boolean) {
             }
         },
         actions = {
-            when (vm.screen) {
-                Screen.LINK -> IconButton(onClick = { vm.error = null; vm.screen = Screen.SETUP }) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Pengaturan")
-                }
-                Screen.LIST -> IconButton(onClick = { vm.doScan(goToList = false) }, enabled = !vm.loading) {
+            if (vm.screen == Screen.LIST) {
+                IconButton(onClick = { vm.rescan() }, enabled = !vm.loading) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Muat ulang")
                 }
-                else -> {}
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -161,52 +163,13 @@ private fun TopBar(vm: AppViewModel, canGoBack: Boolean) {
     )
 }
 
-// ---------------- Pengaturan ----------------
-@Composable
-private fun SetupScreen(vm: AppViewModel) {
-    var url by rememberSaveable { mutableStateOf(vm.apiUrl) }
-    var tok by rememberSaveable { mutableStateOf(vm.token) }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Section("Hubungkan ke Google Sheets") {
-            Text(
-                "Cukup diisi sekali. URL Web App didapat setelah deploy Code.gs (berakhiran /exec).",
-                style = MaterialTheme.typography.bodySmall, color = Gray,
-            )
-            OutlinedTextField(
-                value = url, onValueChange = { url = it },
-                label = { Text("URL Web App") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = tok, onValueChange = { tok = it },
-                label = { Text("Kode rahasia (TOKEN)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            ErrorText(vm.error)
-            Button(
-                onClick = { vm.testAndSaveConfig(url, tok) },
-                enabled = !vm.loading && url.isNotBlank() && tok.isNotBlank(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            ) { Text(if (vm.loading) "Menghubungkan…" else "Simpan & Tes Koneksi") }
-        }
-    }
-}
-
 // ---------------- Halaman 1: Link ----------------
 @Composable
 private fun LinkScreen(vm: AppViewModel) {
     val clipboard = LocalClipboardManager.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.scanFile(uri)
+    }
     Column(
         Modifier
             .fillMaxSize()
@@ -214,7 +177,7 @@ private fun LinkScreen(vm: AppViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Section("Link Google Sheets") {
+        Section("Link Google Sheets / Drive") {
             OutlinedTextField(
                 value = vm.link, onValueChange = { vm.link = it },
                 label = { Text("Tempel link di sini") },
@@ -234,16 +197,29 @@ private fun LinkScreen(vm: AppViewModel) {
             }
             ErrorText(vm.error)
             Button(
-                onClick = { vm.doScan() },
+                onClick = { vm.scanLink() },
                 enabled = !vm.loading && vm.link.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
             ) { Text(if (vm.loading) "Memindai…" else "Scan", fontSize = 16.sp) }
+            Text(
+                "File harus dibagikan: \"Siapa saja yang memiliki link\" (Viewer).",
+                style = MaterialTheme.typography.bodySmall, color = Gray,
+            )
+        }
+        Section("Atau dari file di HP") {
+            OutlinedButton(
+                onClick = { picker.launch(arrayOf(XLSX_MIME, "application/octet-stream", "application/vnd.ms-excel")) },
+                enabled = !vm.loading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) { Text("Pilih file .xlsx dari HP") }
         }
         Text(
-            "Tips: di aplikasi Google Sheets/Drive tekan Bagikan → Input Psikotes, link langsung dipindai otomatis.\n" +
-                "Link file .xlsx juga bisa; aplikasi otomatis membuat salinan Google Sheets dan menyimpan data di sana.",
+            "Isian disimpan di HP. Setelah semua siswa terisi, buka daftar siswa lalu tekan " +
+                "\"Salin nilai\" atau \"Buat .xlsx\" untuk dipindahkan ke file asli.",
             style = MaterialTheme.typography.bodySmall, color = Gray,
         )
     }
@@ -257,10 +233,11 @@ private fun ListScreen(vm: AppViewModel) {
         Text("Belum ada data.", Modifier.padding(16.dp))
         return
     }
+    val context = LocalContext.current
     val q = vm.query.trim().lowercase()
     val shown = remember(sc, q) { sc.students.filter { q.isEmpty() || it.nama.lowercase().contains(q) } }
-    val full = sc.students.count { it.filled >= it.total }
-    val part = sc.students.count { it.filled in 1 until it.total }
+    val full = sc.students.count { vm.filled(it.row) >= FIELD_COUNT }
+    val part = sc.students.count { vm.filled(it.row) in 1 until FIELD_COUNT }
     val none = sc.students.size - full - part
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
@@ -269,9 +246,6 @@ private fun ListScreen(vm: AppViewModel) {
                 "${sc.sekolah.ifBlank { sc.file }} · Tes ${sc.tglTes.ifBlank { "-" }}",
                 color = Gray, style = MaterialTheme.typography.bodyMedium,
             )
-            if (sc.converted) {
-                Text("Disimpan ke: ${sc.file}", color = Orange, style = MaterialTheme.typography.bodySmall)
-            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(vertical = 10.dp),
@@ -279,6 +253,36 @@ private fun ListScreen(vm: AppViewModel) {
                 Pill("Lengkap $full", Color(0xFFE3F5EA), Green)
                 Pill("Sebagian $part", Color(0xFFFDF1DC), Orange)
                 Pill("Kosong $none", Color(0xFFECEEF2), Gray)
+            }
+            val exported = vm.lastExport
+            if (exported != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F5EA)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("File hasil sudah dibuat ✓", fontWeight = FontWeight.SemiBold, color = Green)
+                        Row {
+                            TextButton(onClick = {
+                                val i = Intent(Intent.ACTION_VIEW).setDataAndType(exported, XLSX_MIME)
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                try {
+                                    context.startActivity(i)
+                                } catch (e: ActivityNotFoundException) {
+                                    vm.notify("Tidak ada aplikasi untuk membuka .xlsx")
+                                }
+                            }) { Text("Buka") }
+                            TextButton(onClick = {
+                                val i = Intent(Intent.ACTION_SEND).setType(XLSX_MIME)
+                                    .putExtra(Intent.EXTRA_STREAM, exported)
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                context.startActivity(Intent.createChooser(i, "Bagikan file hasil"))
+                            }) { Text("Bagikan") }
+                        }
+                    }
+                }
             }
             OutlinedTextField(
                 value = vm.query, onValueChange = { vm.query = it },
@@ -291,22 +295,17 @@ private fun ListScreen(vm: AppViewModel) {
             Spacer(Modifier.height(8.dp))
         }
         if (shown.isEmpty()) {
-            item {
-                Text(
-                    if (sc.students.isEmpty()) "Tidak ada nama siswa ditemukan (data dibaca mulai baris 6)." else "Tidak ada yang cocok.",
-                    color = Gray, modifier = Modifier.padding(vertical = 24.dp),
-                )
-            }
+            item { Text("Tidak ada yang cocok.", color = Gray, modifier = Modifier.padding(vertical = 24.dp)) }
         }
         items(shown, key = { it.row }) { s ->
-            StudentRow(s) { vm.openStudent(s) }
+            StudentRow(s, vm.filled(s.row)) { vm.openStudent(s) }
             HorizontalDivider()
         }
     }
 }
 
 @Composable
-private fun StudentRow(s: Student, onClick: () -> Unit) {
+private fun StudentRow(s: Student, filled: Int, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -324,9 +323,45 @@ private fun StudentRow(s: Student, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(8.dp))
         when {
-            s.filled >= s.total -> Pill("✓ Lengkap", Color(0xFFE3F5EA), Green)
-            s.filled > 0 -> Pill("${s.filled}/${s.total}", Color(0xFFFDF1DC), Orange)
+            filled >= FIELD_COUNT -> Pill("✓ Lengkap", Color(0xFFE3F5EA), Green)
+            filled > 0 -> Pill("$filled/$FIELD_COUNT", Color(0xFFFDF1DC), Orange)
             else -> Pill("Belum", Color(0xFFECEEF2), Gray)
+        }
+    }
+}
+
+@Composable
+private fun ListBottomBar(vm: AppViewModel) {
+    val clipboard = LocalClipboardManager.current
+    val creator = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(XLSX_MIME)) { uri ->
+        if (uri != null) vm.exportTo(uri)
+    }
+    Surface(shadowElevation = 8.dp, color = Color.White) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(
+                "Pindah ke file asli: Salin nilai → buka file asli → tekan sel E6 → Tempel.",
+                style = MaterialTheme.typography.bodySmall, color = Gray,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(vm.valuesAsTsv()))
+                        vm.notify("Nilai disalin. Tempel di sel E6 file asli.")
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                ) { Text("Salin nilai") }
+                Button(
+                    onClick = { creator.launch(vm.exportFileName()) },
+                    enabled = !vm.loading,
+                    colors = ButtonDefaults.buttonColors(containerColor = Green),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                ) { Text("Buat .xlsx") }
+            }
         }
     }
 }
@@ -334,7 +369,7 @@ private fun StudentRow(s: Student, onClick: () -> Unit) {
 // ---------------- Halaman 3: Input ----------------
 @Composable
 private fun FormScreen(vm: AppViewModel) {
-    val d = vm.detail
+    val s = vm.current ?: return
     Column(
         Modifier
             .fillMaxSize()
@@ -342,69 +377,64 @@ private fun FormScreen(vm: AppViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (d == null) {
-            if (vm.error == null) Text("Memuat data…", color = Gray)
-            ErrorText(vm.error)
-        } else {
-            Section(null) {
-                Text(d.nama, fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                Text(
-                    "No ${d.no} · ${d.jk.ifBlank { "-" }} · ${d.tgl.ifBlank { "-" }}",
-                    color = Gray, style = MaterialTheme.typography.bodySmall,
-                )
-            }
-
-            Section("IST (skor)") {
-                FieldGrid(IST_LABELS.indices.toList(), 3, { IST_LABELS[it] }, vm)
-            }
-
-            Section("DISC") {
-                OutlinedTextField(
-                    value = vm.form[IDX_DISC],
-                    onValueChange = { vm.setField(IDX_DISC, it.uppercase()) },
-                    label = { Text("Urutan, pisah dengan strip (contoh C-S-D)") },
-                    isError = IDX_DISC in vm.invalid,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    DISC_LETTERS.forEach { l ->
-                        OutlinedButton(
-                            onClick = { vm.addDisc(l) },
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.weight(1f),
-                        ) { Text(l, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-                    }
-                    TextButton(onClick = { vm.setField(IDX_DISC, "") }) { Text("Hapus") }
-                }
-            }
-
-            Section("Career Cluster") {
-                FieldGrid((0 until 16).map { IDX_CC + it }, 4, { (it - IDX_CC + 1).toString() }, vm)
-            }
-
-            Section("Learning Style") {
-                LS_OPTIONS.chunked(2).forEach { opts ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        opts.forEach { o ->
-                            FilterChip(
-                                selected = vm.form[IDX_LS] == o,
-                                onClick = { vm.setField(IDX_LS, if (vm.form[IDX_LS] == o) "" else o) },
-                                label = { Text(o, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-                val cur = vm.form[IDX_LS]
-                if (cur.isNotEmpty() && cur !in LS_OPTIONS) {
-                    Text("Nilai di sheet: $cur", color = Gray, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            ErrorText(vm.error)
-            Spacer(Modifier.height(8.dp))
+        Section(null) {
+            Text(s.nama, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+            Text(
+                "No ${s.no} · ${s.jk.ifBlank { "-" }} · ${s.tgl.ifBlank { "-" }}",
+                color = Gray, style = MaterialTheme.typography.bodySmall,
+            )
         }
+
+        Section("IST (skor)") {
+            FieldGrid(IST_LABELS.indices.toList(), 3, { IST_LABELS[it] }, vm)
+        }
+
+        Section("DISC") {
+            OutlinedTextField(
+                value = vm.form[IDX_DISC],
+                onValueChange = { vm.setField(IDX_DISC, it.uppercase()) },
+                label = { Text("Urutan, pisah dengan strip (contoh C-S-D)") },
+                isError = IDX_DISC in vm.invalid,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                DISC_LETTERS.forEach { l ->
+                    OutlinedButton(
+                        onClick = { vm.addDisc(l) },
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.weight(1f),
+                    ) { Text(l, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                }
+                TextButton(onClick = { vm.setField(IDX_DISC, "") }) { Text("Hapus") }
+            }
+        }
+
+        Section("Career Cluster") {
+            FieldGrid((0 until 16).map { IDX_CC + it }, 4, { (it - IDX_CC + 1).toString() }, vm)
+        }
+
+        Section("Learning Style") {
+            LS_OPTIONS.chunked(2).forEach { opts ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    opts.forEach { o ->
+                        FilterChip(
+                            selected = vm.form[IDX_LS] == o,
+                            onClick = { vm.setField(IDX_LS, if (vm.form[IDX_LS] == o) "" else o) },
+                            label = { Text(o, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            val cur = vm.form[IDX_LS]
+            if (cur.isNotEmpty() && cur !in LS_OPTIONS) {
+                Text("Nilai di file: $cur", color = Gray, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        ErrorText(vm.error)
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -434,13 +464,13 @@ private fun FormBottomBar(vm: AppViewModel) {
     Surface(shadowElevation = 8.dp, color = Color.White) {
         Button(
             onClick = { vm.save() },
-            enabled = !vm.loading && vm.detail != null,
+            enabled = vm.current != null,
             colors = ButtonDefaults.buttonColors(containerColor = Green),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
                 .height(54.dp),
-        ) { Text(if (vm.loading) "Menyimpan…" else "Selesai", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
+        ) { Text("Selesai", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
 
