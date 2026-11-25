@@ -9,7 +9,20 @@ const val IDX_LS = 26            // kolom AE
 
 val IST_LABELS = listOf("SE", "WA", "AN", "GE", "RA", "ZR", "FA", "WU", "ME")
 val DISC_LETTERS = listOf("D", "I", "S", "C")
-val LS_OPTIONS = listOf("Aktivis", "Reflektor", "Teoris", "Pragmatis")
+val LS_OPTIONS = listOf("Activist", "Reflector", "Theorist", "Pragmatist")
+
+/** Nama lama (Indonesia) -> nama baru (Inggris). */
+private val LS_ALIASES = mapOf(
+    "aktivis" to "Activist", "activist" to "Activist",
+    "reflektor" to "Reflector", "reflector" to "Reflector",
+    "teoris" to "Theorist", "theorist" to "Theorist",
+    "pragmatis" to "Pragmatist", "pragmatist" to "Pragmatist",
+)
+
+fun normalizeLs(v: String): String = LS_ALIASES[v.trim().lowercase()] ?: v
+
+fun List<String>.withNormalizedLs(): List<String> =
+    mapIndexed { i, x -> if (i == IDX_LS) normalizeLs(x) else x }
 
 class AppException(msg: String) : Exception(msg)
 

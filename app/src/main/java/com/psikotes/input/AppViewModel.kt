@@ -122,14 +122,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         scan = r
         lastExport = null
         values.clear()
-        r.students.forEach { values[it.row] = it.fileValues }
+        r.students.forEach { values[it.row] = it.fileValues.withNormalizedLs() }
         // Isian yang sudah dibuat di HP menimpa nilai dari file
         val saved = loadLocal(r.key)
         for (s in r.students) {
             val o = saved.optJSONObject(s.row.toString()) ?: continue
             if (o.optString("n") != s.nama) continue
             val arr = o.optJSONArray("v") ?: continue
-            values[s.row] = (0 until FIELD_COUNT).map { arr.optString(it, "") }
+            values[s.row] = (0 until FIELD_COUNT).map { arr.optString(it, "") }.withNormalizedLs()
         }
     }
 

@@ -75,4 +75,13 @@ class XlsxTest {
         assertEquals("A", colName(0)); assertEquals("E", colName(4)); assertEquals("AE", colName(30))
         assertEquals(30, colIndex("AE12")); assertEquals(0, colIndex("A1"))
     }
+
+    @Test
+    fun learningStyleEnglish() {
+        assertEquals("Reflector", normalizeLs("Reflektor"))
+        assertEquals("Activist", normalizeLs("aktivis"))
+        assertEquals("Theorist", normalizeLs("Teoris"))
+        assertEquals("Pragmatist", normalizeLs("Pragmatis"))
+        assertEquals("", normalizeLs(""))
+    }
 }
