@@ -8,6 +8,10 @@ const val IDX_CC = 10            // kolom O (cluster 1)
 const val IDX_LS = 26            // kolom AE
 
 val IST_LABELS = listOf("SE", "WA", "AN", "GE", "RA", "ZR", "FA", "WU", "ME")
+
+/** Urutan input di layar, mengikuti lembar hasil IST (SE WA AN GE ME RA ZR FA WU).
+ *  Isinya indeks kolom di file (E..M), jadi susunan .xlsx tidak berubah. */
+val IST_INPUT_ORDER = listOf(0, 1, 2, 3, 8, 4, 5, 6, 7)
 val DISC_LETTERS = listOf("D", "I", "S", "C")
 val LS_OPTIONS = listOf("Activist", "Reflector", "Theorist", "Pragmatist")
 

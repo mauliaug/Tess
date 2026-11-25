@@ -385,8 +385,8 @@ private fun FormScreen(vm: AppViewModel) {
             )
         }
 
-        Section("IST (skor)") {
-            FieldGrid(IST_LABELS.indices.toList(), 3, { IST_LABELS[it] }, vm)
+        Section("IST (RW)") {
+            IST_INPUT_ORDER.forEach { i -> IstRow(i, vm) }
         }
 
         Section("DISC") {
@@ -456,6 +456,28 @@ private fun FieldGrid(indices: List<Int>, cols: Int, label: (Int) -> String, vm:
             }
             repeat(cols - rowIdx.size) { Spacer(Modifier.weight(1f)) }
         }
+    }
+}
+
+@Composable
+private fun IstRow(i: Int, vm: AppViewModel) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            IST_LABELS[i],
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            modifier = Modifier.width(56.dp),
+        )
+        OutlinedTextField(
+            value = vm.form[i],
+            onValueChange = { v -> vm.setField(i, v.filter { it.isDigit() || it == '.' || it == ',' }.take(5)) },
+            singleLine = true,
+            isError = i in vm.invalid,
+            placeholder = { Text("RW", color = Gray) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontSize = 18.sp),
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

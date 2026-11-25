@@ -84,4 +84,10 @@ class XlsxTest {
         assertEquals("Pragmatist", normalizeLs("Pragmatis"))
         assertEquals("", normalizeLs(""))
     }
+
+    @Test
+    fun istInputOrderMatchesSheet() {
+        assertEquals(listOf("SE", "WA", "AN", "GE", "ME", "RA", "ZR", "FA", "WU"), IST_INPUT_ORDER.map { IST_LABELS[it] })
+        assertEquals((0..8).toSet(), IST_INPUT_ORDER.toSet())
+    }
 }
