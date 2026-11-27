@@ -21,7 +21,7 @@ import org.json.JSONObject
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
-enum class Screen { LINK, LIST, FORM }
+enum class Screen { LINK, LIST, FORM, STUDENT }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -39,6 +39,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var query by mutableStateOf("")
     var lastExport by mutableStateOf<Uri?>(null)
         private set
+
+    // Form data siswa tambahan
+    var idNama by mutableStateOf("")
+    var idJk by mutableStateOf("")
+    var idTgl by mutableStateOf("")
+    var editingId by mutableStateOf<Long?>(null)
+        private set
+    private var baseScan: ScanResult? = null
 
     /** Nilai E..AE per baris (yang tampil & akan diekspor). */
     val values = mutableStateMapOf<Int, List<String>>()
@@ -119,18 +127,128 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun applyScan(r: ScanResult) {
-        scan = r
+        baseScan = r
         lastExport = null
+        rebuild()
+    }
+
+    /** Susun ulang daftar (siswa file + siswa tambahan) dan nilai-nilainya. */
+    private fun rebuild() {
+        val b = baseScan ?: return
+        val r = b.copy(students = mergeAdded(b.students, loadAdded(b.key)))
+        scan = r
         values.clear()
         r.students.forEach { values[it.row] = it.fileValues.withNormalizedLs() }
         // Isian yang sudah dibuat di HP menimpa nilai dari file
         val saved = loadLocal(r.key)
+        val byName = HashMap<String, JSONObject>()
+        saved.keys().forEach { k -> saved.optJSONObject(k)?.let { byName[it.optString("n").lowercase()] = it } }
         for (s in r.students) {
-            val o = saved.optJSONObject(s.row.toString()) ?: continue
-            if (o.optString("n") != s.nama) continue
-            val arr = o.optJSONArray("v") ?: continue
+            var o = saved.optJSONObject(s.row.toString())
+            if (o != null && o.optString("n") != s.nama) o = null
+            if (o == null && s.added) o = byName[s.nama.lowercase()]
+            val arr = o?.optJSONArray("v") ?: continue
             values[s.row] = (0 until FIELD_COUNT).map { arr.optString(it, "") }.withNormalizedLs()
         }
+    }
+
+    // ---------- Siswa tambahan ----------
+    private fun loadAdded(key: String): List<NewStudent> = try {
+        val arr = JSONArray(prefs.getString("added_$key", "[]") ?: "[]")
+        (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            NewStudent(o.getLong("id"), o.optString("nama"), o.optString("jk"), o.optString("tgl"))
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun saveAdded(key: String, list: List<NewStudent>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(JSONObject().put("id", it.id).put("nama", it.nama).put("jk", it.jk).put("tgl", it.tgl)) }
+        prefs.edit().putString("added_$key", arr.toString()).apply()
+    }
+
+    fun startAddStudent() {
+        editingId = null
+        idNama = ""; idJk = ""; idTgl = ""
+        error = null
+        screen = Screen.STUDENT
+    }
+
+    fun editStudentIdentity(s: Student) {
+        if (!s.added) return
+        editingId = s.addedId
+        idNama = s.nama; idJk = s.jk; idTgl = s.tgl
+        error = null
+        screen = Screen.STUDENT
+    }
+
+    fun saveIdentity() {
+        val sc = scan ?: return
+        val nama = idNama.trim().replace(Regex("\\s+"), " ")
+        val tgl = normalizeDate(idTgl)
+        val others = sc.students.filter { !(it.added && it.addedId == editingId) }
+        error = when {
+            nama.isEmpty() -> "Nama siswa wajib diisi."
+            others.any { it.nama.equals(nama, ignoreCase = true) } -> "Nama \"$nama\" sudah ada di daftar."
+            idJk.isEmpty() -> "Pilih jenis kelamin."
+            tgl == null -> "Tanggal lahir tidak valid. Contoh: 08/07/2010"
+            else -> null
+        }
+        if (error != null || tgl == null) return
+        idTgl = tgl
+
+        val list = loadAdded(sc.key).toMutableList()
+        val id = editingId
+        val newId: Long
+        if (id == null) {
+            newId = System.currentTimeMillis()
+            list.add(NewStudent(newId, nama, idJk, tgl))
+        } else {
+            newId = id
+            val idx = list.indexOfFirst { it.id == id }
+            if (idx < 0) return
+            val old = list[idx]
+            list[idx] = old.copy(nama = nama, jk = idJk, tgl = tgl)
+            if (old.nama != nama) renameSaved(sc.key, old.nama, nama)
+        }
+        saveAdded(sc.key, list)
+        rebuild()
+        val st = scan?.students?.firstOrNull { it.added && it.addedId == newId } ?: return
+        notify(if (id == null) "Siswa ditambahkan di baris ${st.row}" else "Data siswa diperbarui")
+        openStudent(st)
+    }
+
+    fun deleteAdded() {
+        val sc = scan ?: return
+        val id = editingId ?: return
+        val list = loadAdded(sc.key)
+        val target = list.firstOrNull { it.id == id } ?: return
+        saveAdded(sc.key, list.filter { it.id != id })
+        removeSaved(sc.key, target.nama)
+        rebuild()
+        editingId = null
+        error = null
+        screen = Screen.LIST
+        notify("${target.nama} dihapus")
+    }
+
+    private fun renameSaved(key: String, oldName: String, newName: String) {
+        val all = loadLocal(key)
+        all.keys().asSequence().toList().forEach { k ->
+            val o = all.optJSONObject(k) ?: return@forEach
+            if (o.optString("n") == oldName) o.put("n", newName)
+        }
+        prefs.edit().putString("data_$key", all.toString()).apply()
+    }
+
+    private fun removeSaved(key: String, name: String) {
+        val all = loadLocal(key)
+        all.keys().asSequence().toList().forEach { k ->
+            if (all.optJSONObject(k)?.optString("n") == name) all.remove(k)
+        }
+        prefs.edit().putString("data_$key", all.toString()).apply()
     }
 
     // ---------- Penyimpanan lokal ----------
@@ -201,16 +319,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- Hasil ----------
-    /** Nilai E..AE dari baris 6 sampai baris terakhir, dipisah TAB (untuk ditempel di sel E6). */
+    /** Nilai E..AE siswa dari file (baris 6 s/d baris terakhir file), dipisah TAB, untuk ditempel di sel E6. */
     fun valuesAsTsv(): String {
         val sc = scan ?: return ""
+        val last = sc.fileLastRow
         val sb = StringBuilder()
-        for (r in FIRST_ROW..sc.lastRow) {
+        for (r in FIRST_ROW..last) {
             val v = values[r] ?: List(FIELD_COUNT) { "" }
             sb.append(v.joinToString("\t"))
-            if (r < sc.lastRow) sb.append("\n")
+            if (r < last) sb.append("\n")
         }
         return sb.toString()
+    }
+
+    /** Baris lengkap A..AE untuk siswa tambahan, ditempel di sel A(baris pertama siswa tambahan). */
+    fun addedAsTsv(): String {
+        val sc = scan ?: return ""
+        return sc.addedStudents.joinToString("\n") { s ->
+            (listOf(s.no, s.nama, s.jk, s.tgl) + (values[s.row] ?: s.fileValues)).joinToString("\t")
+        }
     }
 
     fun exportFileName(): String {
@@ -249,6 +376,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         error = null
         screen = when (screen) {
             Screen.FORM -> Screen.LIST
+            Screen.STUDENT -> Screen.LIST
             Screen.LIST -> Screen.LINK
             Screen.LINK -> Screen.LINK
         }

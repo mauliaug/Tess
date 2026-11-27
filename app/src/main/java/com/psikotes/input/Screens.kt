@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -53,6 +54,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,6 +122,7 @@ fun App(vm: AppViewModel) {
                 Screen.LINK -> LinkScreen(vm)
                 Screen.LIST -> ListScreen(vm)
                 Screen.FORM -> FormScreen(vm)
+                Screen.STUDENT -> StudentScreen(vm)
             }
             if (vm.loading) {
                 LinearProgressIndicator(
@@ -137,6 +142,7 @@ private fun TopBar(vm: AppViewModel, canGoBack: Boolean) {
         Screen.LINK -> "Input Psikotes v${BuildConfig.VERSION_NAME}"
         Screen.LIST -> vm.scan?.let { "Ruang ${it.ruang.ifBlank { "-" }}" } ?: "Daftar Siswa"
         Screen.FORM -> vm.current?.let { "Input No ${it.no}" } ?: "Input"
+        Screen.STUDENT -> if (vm.editingId == null) "Tambah Siswa" else "Ubah Data Siswa"
     }
     TopAppBar(
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -292,6 +298,12 @@ private fun ListScreen(vm: AppViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             )
             ErrorText(vm.error)
+            OutlinedButton(
+                onClick = { vm.startAddStudent() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+            ) { Text("+ Tambah siswa (tidak ada di daftar)") }
             Spacer(Modifier.height(8.dp))
         }
         if (shown.isEmpty()) {
@@ -317,7 +329,8 @@ private fun StudentRow(s: Student, filled: Int, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(s.nama, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                listOf(s.jk, s.tgl).filter { it.isNotBlank() }.joinToString(" · "),
+                (listOf(s.jk, s.tgl).filter { it.isNotBlank() } + if (s.added) listOf("Baru · baris ${s.row}") else emptyList())
+                    .joinToString(" · "),
                 color = Gray, style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -339,7 +352,7 @@ private fun ListBottomBar(vm: AppViewModel) {
     Surface(shadowElevation = 8.dp, color = Color.White) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
-                "Pindah ke file asli: Salin nilai → buka file asli → tekan sel E6 → Tempel.",
+                "Pindah ke file asli: Salin nilai → buka file asli → tekan sel E6 → Tempel khusus → nilai saja.",
                 style = MaterialTheme.typography.bodySmall, color = Gray,
             )
             Spacer(Modifier.height(8.dp))
@@ -362,7 +375,94 @@ private fun ListBottomBar(vm: AppViewModel) {
                         .height(50.dp),
                 ) { Text("Buat .xlsx") }
             }
+            val added = vm.scan?.addedStudents.orEmpty()
+            if (added.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(vm.addedAsTsv()))
+                        vm.notify("Siswa baru disalin. Tempel di sel A${added.first().row} file asli.")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                ) { Text("Salin ${added.size} siswa baru (tempel di A${added.first().row})") }
+            }
         }
+    }
+}
+
+// ---------------- Tambah / ubah siswa ----------------
+@Composable
+private fun StudentScreen(vm: AppViewModel) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    val nextRow = vm.scan?.let { sc ->
+        if (vm.editingId == null) sc.lastRow + 1
+        else sc.students.firstOrNull { it.added && it.addedId == vm.editingId }?.row
+    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Section(if (vm.editingId == null) "Siswa baru" else "Ubah data siswa") {
+            if (nextRow != null) {
+                Text("Akan ditulis di baris $nextRow (kolom A–D).", color = Gray, style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedTextField(
+                value = vm.idNama, onValueChange = { vm.idNama = it },
+                label = { Text("Nama siswa") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Jenis kelamin", color = Gray, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                JK_OPTIONS.forEach { o ->
+                    FilterChip(
+                        selected = vm.idJk == o,
+                        onClick = { vm.idJk = o },
+                        label = { Text(o, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = vm.idTgl,
+                onValueChange = { v -> vm.idTgl = v.filter { it.isDigit() || it == '/' || it == '-' || it == '.' }.take(10) },
+                label = { Text("Tanggal lahir (dd/mm/yyyy)") },
+                placeholder = { Text("08/07/2010") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Boleh diketik tanpa garis miring, contoh 08072010.", color = Gray, style = MaterialTheme.typography.bodySmall)
+            ErrorText(vm.error)
+            Button(
+                onClick = { vm.saveIdentity() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) { Text(if (vm.editingId == null) "Simpan & isi nilai" else "Simpan") }
+            if (vm.editingId != null) {
+                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Hapus siswa ini", color = Red)
+                }
+            }
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Hapus siswa?") },
+            text = { Text("${vm.idNama} dan semua nilainya akan dihapus dari aplikasi.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; vm.deleteAdded() }) { Text("Hapus", color = Red) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Batal") } },
+        )
     }
 }
 
@@ -383,6 +483,13 @@ private fun FormScreen(vm: AppViewModel) {
                 "No ${s.no} · ${s.jk.ifBlank { "-" }} · ${s.tgl.ifBlank { "-" }}",
                 color = Gray, style = MaterialTheme.typography.bodySmall,
             )
+            if (s.added) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Pill("Siswa baru · baris ${s.row}", Color(0xFFE8F0FE), Blue)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { vm.editStudentIdentity(s) }) { Text("Ubah data") }
+                }
+            }
         }
 
         Section("IST (RW)") {

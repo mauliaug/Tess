@@ -90,4 +90,42 @@ class XlsxTest {
         assertEquals(listOf("SE", "WA", "AN", "GE", "ME", "RA", "ZR", "FA", "WU"), IST_INPUT_ORDER.map { IST_LABELS[it] })
         assertEquals((0..8).toSet(), IST_INPUT_ORDER.toSet())
     }
+
+    @Test
+    fun addedStudentsAppendAfterFile() {
+        val file = XlsxReader.read(sampleXlsx()).toScanResult("k", "f.xlsx")
+        val merged = mergeAdded(
+            file.students,
+            listOf(
+                NewStudent(2, "Budi", "Laki - Laki", "01/02/2010"),
+                NewStudent(1, "Ani", "Perempuan", "03/04/2011"),
+                NewStudent(3, "akbar dwiyasri", "Laki - Laki", ""), // sudah ada di file -> dilewati
+            ),
+        )
+        val sc = file.copy(students = merged)
+        assertEquals(listOf(6, 7, 8, 9), merged.map { it.row })
+        assertEquals(listOf("Ani", "Budi"), sc.addedStudents.map { it.nama })
+        assertEquals(listOf("3", "4"), sc.addedStudents.map { it.no })
+        assertEquals(7, sc.fileLastRow)
+
+        val out = ByteArrayOutputStream()
+        XlsxWriter.write(out, sc, mapOf(9 to List(FIELD_COUNT) { if (it == IDX_LS) "Activist" else "5" }))
+        val back = XlsxReader.read(out.toByteArray()).toScanResult("k", "f.xlsx")
+        val budi = back.students.first { it.row == 9 }
+        assertEquals("Budi", budi.nama)
+        assertEquals("Laki - Laki", budi.jk)
+        assertEquals("01/02/2010", budi.tgl)
+        assertEquals("4", budi.no)
+        assertEquals("Activist", budi.fileValues[IDX_LS])
+    }
+
+    @Test
+    fun dates() {
+        assertEquals("08/07/2010", normalizeDate("8/7/2010"))
+        assertEquals("08/07/2010", normalizeDate("08072010"))
+        assertEquals("08/07/2010", normalizeDate("08-07-2010"))
+        assertEquals("", normalizeDate(" "))
+        assertEquals(null, normalizeDate("31/02/2010"))
+        assertEquals(null, normalizeDate("abc"))
+    }
 }

@@ -201,7 +201,13 @@ object XlsxWriter {
         // Info
         put(1, 0, "Sekolah"); put(1, 1, scan.sekolah)
         put(2, 0, "Ruang"); put(2, 1, scan.ruang)
-        put(2, 2, "Salin E$FIRST_ROW:AE${scan.lastRow} lalu tempel ke sel E$FIRST_ROW di file asli")
+        val added = scan.addedStudents
+        put(
+            2, 2,
+            "Salin E$FIRST_ROW:AE${scan.fileLastRow} lalu tempel ke sel E$FIRST_ROW di file asli" +
+                if (added.isEmpty()) "" else
+                    ". Siswa baru: salin A${added.first().row}:AE${added.last().row} lalu tempel ke sel A${added.first().row}"
+        )
         put(3, 0, "Tgl Tes"); put(3, 1, scan.tglTes)
 
         // Header baris 4-5
